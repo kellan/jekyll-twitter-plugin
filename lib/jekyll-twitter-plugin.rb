@@ -76,7 +76,10 @@ module TwitterJekyll
         http.get uri.request_uri, REQUEST_HEADERS
       end
 
-      handle_response(api_request, response)
+      response = handle_response(api_request, response)
+      response = expand_all_tcos(response)
+      return response
+
     rescue Timeout::Error => e
       ErrorResponse.new(api_request, e.class.name).to_h
     end
@@ -90,6 +93,29 @@ module TwitterJekyll
       else
         ErrorResponse.new(api_request, response.message).to_h
       end
+    end
+
+    def expand_all_tcos(response)
+      matches = response['html'].scan(%r{https://t.co/\w+}).uniq
+      tcos = matches.map { |t| expand_tco(t) }
+
+      tcos.each do |t|
+          response['html'].gsub! t[0], t[1]
+      end
+      return response
+    end
+    
+    # HEAD t.co links and return the expanded location
+    def expand_tco(tco)
+      uri = URI(tco)
+
+      response = Net::HTTP.start(uri.host, use_ssl: true) do |http|
+          http.read_timeout = 5
+          http.open_timeout = 5
+          http.head(uri.request_uri)
+      end
+
+      return [tco, response['location']]
     end
   end
 
